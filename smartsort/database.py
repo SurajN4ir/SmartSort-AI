@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     moved_count INTEGER NOT NULL DEFAULT 0,
     error_count INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'completed',
-    undone INTEGER NOT NULL DEFAULT 0
+    undone INTEGER NOT NULL DEFAULT 0,
+    kind TEXT NOT NULL DEFAULT 'organize'
 );
 
 CREATE TABLE IF NOT EXISTS moves (
@@ -51,6 +52,7 @@ class SessionRecord:
     error_count: int
     status: str
     undone: bool
+    kind: str = "organize"
 
 
 @dataclass
@@ -72,7 +74,17 @@ class Database:
         self._connection = sqlite3.connect(self.db_path)
         self._connection.row_factory = sqlite3.Row
         self._connection.executescript(SCHEMA)
+        self._migrate()
         self._connection.commit()
+
+    def _migrate(self) -> None:
+        """Add columns introduced after a user's database already existed."""
+
+        columns = {row["name"] for row in self._connection.execute("PRAGMA table_info(sessions)")}
+        if "kind" not in columns:
+            self._connection.execute(
+                "ALTER TABLE sessions ADD COLUMN kind TEXT NOT NULL DEFAULT 'organize'"
+            )
 
     def close(self) -> None:
         self._connection.close()
@@ -84,14 +96,14 @@ class Database:
         self.close()
 
     def create_session(
-        self, folder_path: str, total_files: int, total_categories: int
+        self, folder_path: str, total_files: int, total_categories: int, kind: str = "organize"
     ) -> int:
         cursor = self._connection.execute(
             """
-            INSERT INTO sessions (folder_path, created_at, total_files, total_categories)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO sessions (folder_path, created_at, total_files, total_categories, kind)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (folder_path, datetime.now().isoformat(timespec="seconds"), total_files, total_categories),
+            (folder_path, datetime.now().isoformat(timespec="seconds"), total_files, total_categories, kind),
         )
         self._connection.commit()
         return cursor.lastrowid
@@ -164,6 +176,7 @@ class Database:
             error_count=row["error_count"],
             status=row["status"],
             undone=bool(row["undone"]),
+            kind=row["kind"] if "kind" in row.keys() else "organize",
         )
 
     @staticmethod

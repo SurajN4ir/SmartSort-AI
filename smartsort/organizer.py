@@ -19,13 +19,17 @@ class FileOrganizer:
         self.database = database
 
     def apply(
-        self, plan: OrganizePlan, progress_callback: MoveProgressCallback | None = None
+        self,
+        plan: OrganizePlan,
+        progress_callback: MoveProgressCallback | None = None,
+        kind: str = "organize",
     ) -> ApplyResult:
         moves = plan.selected_moves
         session_id = self.database.create_session(
             folder_path=str(plan.root),
             total_files=len(moves),
             total_categories=len({m.category for m in moves}),
+            kind=kind,
         )
         result = ApplyResult(session_id=session_id)
 

@@ -10,6 +10,7 @@ from smartsort.gui import theme
 
 NAV_ITEMS = [
     ("overview", "⌂", "Overview"),
+    ("duplicates", "⧉", "Duplicates"),
     ("history", "◷", "History"),
     ("settings", "⚙", "Settings"),
 ]

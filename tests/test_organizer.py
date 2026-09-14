@@ -53,6 +53,30 @@ def test_apply_skips_deselected_moves(tmp_path):
     db.close()
 
 
+def test_apply_defaults_session_kind_to_organize(tmp_path):
+    db = Database(tmp_path / "test.db")
+    move = make_move(tmp_path, "resume.pdf", "Documents")
+    plan = OrganizePlan(root=tmp_path, moves=[move])
+
+    organizer = FileOrganizer(db)
+    result = organizer.apply(plan)
+
+    assert db.get_session(result.session_id).kind == "organize"
+    db.close()
+
+
+def test_apply_records_custom_session_kind(tmp_path):
+    db = Database(tmp_path / "test.db")
+    move = make_move(tmp_path, "resume.pdf", "Duplicates")
+    plan = OrganizePlan(root=tmp_path, moves=[move])
+
+    organizer = FileOrganizer(db)
+    result = organizer.apply(plan, kind="dedupe")
+
+    assert db.get_session(result.session_id).kind == "dedupe"
+    db.close()
+
+
 def test_undo_restores_file_to_original_location(tmp_path):
     db = Database(tmp_path / "test.db")
     move = make_move(tmp_path, "resume.pdf", "Documents")

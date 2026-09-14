@@ -6,6 +6,7 @@ import customtkinter as ctk
 
 from smartsort.database import Database
 from smartsort.gui import theme
+from smartsort.gui.duplicates import DuplicatesView
 from smartsort.gui.history import HistoryView
 from smartsort.gui.overview import OverviewView
 from smartsort.gui.settings import SettingsView
@@ -38,6 +39,7 @@ class SmartSortApp(ctk.CTk):
 
         self.views = {
             "overview": OverviewView(self.content, database=self.database),
+            "duplicates": DuplicatesView(self.content, database=self.database),
             "history": HistoryView(self.content, database=self.database),
             "settings": SettingsView(self.content),
         }

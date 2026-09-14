@@ -40,7 +40,7 @@ class HistoryView(ctk.CTkFrame):
         ctk.CTkLabel(self.container, text="History", font=theme.heading_font(20)).pack(anchor="w", pady=(0, 4))
         ctk.CTkLabel(
             self.container,
-            text="Every folder SmartSort has organized, and what changed.",
+            text="Every folder SmartSort has organized or cleaned up, and what changed.",
             font=theme.font(13),
             text_color=theme.TEXT_SECONDARY,
         ).pack(anchor="w", pady=(0, 20))
@@ -73,10 +73,16 @@ class HistoryView(ctk.CTkFrame):
         info.grid(row=0, column=0, sticky="w", padx=18, pady=14)
 
         folder_name = session.folder_path.rstrip("\\/").split("/")[-1].split("\\")[-1]
-        ctk.CTkLabel(info, text=folder_name or session.folder_path, font=theme.font(14, "bold")).pack(anchor="w")
+        kind_icon = "📋" if session.kind == "dedupe" else "📁"
+        ctk.CTkLabel(
+            info, text=f"{kind_icon}  {folder_name or session.folder_path}", font=theme.font(14, "bold")
+        ).pack(anchor="w")
 
         status_text, status_color = self._status_display(session)
-        detail = f"{pluralize(session.moved_count, 'file')} organized · {pluralize(session.total_categories, 'category', 'categories')}"
+        if session.kind == "dedupe":
+            detail = f"{pluralize(session.moved_count, 'duplicate')} cleaned up"
+        else:
+            detail = f"{pluralize(session.moved_count, 'file')} organized · {pluralize(session.total_categories, 'category', 'categories')}"
         ctk.CTkLabel(
             info, text=detail, font=theme.font(11), text_color=theme.TEXT_SECONDARY
         ).pack(anchor="w", pady=(2, 0))
@@ -125,8 +131,9 @@ class HistoryView(ctk.CTkFrame):
         ).pack(anchor="w", pady=(4, 0))
 
         if not session.undone and session.moved_count:
+            undo_label = "Undo this cleanup" if session.kind == "dedupe" else "Undo this organization"
             DangerButton(
-                header, text="Undo this organization", command=lambda: self._undo(session_id)
+                header, text=undo_label, command=lambda: self._undo(session_id)
             ).pack(anchor="w", pady=(12, 0))
 
         table = Card(self.container)

@@ -42,6 +42,7 @@ smartsort/
 ├── categorizer.py   # extension -> category rules, plus AI-guess merging
 ├── semantic.py       # optional LLM-based classifier (Smart Organize)
 ├── planner.py       # turns classified files into a move plan
+├── duplicates.py    # content-hash duplicate detection + cleanup plan
 ├── organizer.py     # executes a plan on disk, and undoes it later
 ├── database.py      # SQLite-backed scan/session history
 ├── local_config.py  # local-only settings (e.g. the API key)
@@ -49,6 +50,7 @@ smartsort/
 └── gui/              # CustomTkinter desktop UI
     ├── app.py
     ├── overview.py    # select -> scan -> propose -> review -> apply
+    ├── duplicates.py  # select -> scan -> review -> clean up
     ├── history.py     # past sessions, drill-down, undo
     └── settings.py
 main.py               # entry point
@@ -89,6 +91,19 @@ Two extra signals feed into the same pass, both automatic once it's on:
 ```bash
 pip install -r requirements-ai.txt
 ```
+
+## Finding and cleaning up duplicates
+
+The **Duplicates** tab scans a folder and everything inside it, groups files
+that have byte-identical content (compared by size first, then a content
+hash -- never by filename), and shows every group before touching anything.
+
+For each group you pick which copy to keep in place; the review screen
+marks the rest "→ Duplicates/" so it's obvious what will move. Nothing is
+ever deleted automatically -- extra copies are moved into a `Duplicates/`
+folder at the scanned location, the same reviewable, undoable move used
+everywhere else in the app, so a cleanup session shows up in History and
+can be reversed just like an organize session.
 
 ## Running it
 

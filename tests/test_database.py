@@ -47,6 +47,22 @@ def test_list_sessions_orders_newest_first(tmp_path):
     db.close()
 
 
+def test_create_session_defaults_kind_to_organize(tmp_path):
+    db = Database(tmp_path / "test.db")
+    session_id = db.create_session("C:/Downloads", total_files=1, total_categories=1)
+
+    assert db.get_session(session_id).kind == "organize"
+    db.close()
+
+
+def test_create_session_accepts_custom_kind(tmp_path):
+    db = Database(tmp_path / "test.db")
+    session_id = db.create_session("C:/Downloads", total_files=1, total_categories=1, kind="dedupe")
+
+    assert db.get_session(session_id).kind == "dedupe"
+    db.close()
+
+
 def test_mark_session_undone_flags_session_and_moves(tmp_path):
     db = Database(tmp_path / "test.db")
     session_id = db.create_session("C:/Downloads", total_files=1, total_categories=1)
