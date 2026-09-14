@@ -21,7 +21,7 @@ class OrganizationPlanner:
         reserved: set[Path] = set()
 
         for item in classified:
-            category_dir = root / item.category
+            category_dir = root.joinpath(*item.category_path)
             destination = self.resolve_destination(category_dir, item.name, reserved)
             reserved.add(destination)
             plan.moves.append(
@@ -30,17 +30,29 @@ class OrganizationPlanner:
                     source=item.path,
                     destination=destination,
                     category=item.category,
+                    subpath=item.subpath,
+                    confidence=item.confidence,
+                    source_kind=item.source,
                 )
             )
 
         return plan
 
     def retarget(self, plan: OrganizePlan, move: PlannedMove, new_category: str) -> None:
-        """Re-point a single planned move at a different category folder in place."""
+        """Re-point a single planned move at a different (flat) category folder.
+
+        A manual override always collapses back to a flat, single-level
+        category -- if the move came from the semantic classifier with a
+        deeper suggested path, that suggestion is discarded in favor of the
+        user's explicit choice.
+        """
 
         reserved = {m.destination for m in plan.moves if m is not move}
         category_dir = plan.root / new_category
         move.category = new_category
+        move.subpath = ()
+        move.source_kind = "manual"
+        move.confidence = None
         move.destination = self.resolve_destination(category_dir, move.name, reserved)
 
     def resolve_destination(

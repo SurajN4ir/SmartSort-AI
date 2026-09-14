@@ -24,10 +24,21 @@ class ScannedFile:
 
 @dataclass
 class ClassifiedFile:
-    """A scanned file with a category assigned by the categorization engine."""
+    """A scanned file with a category assigned by the categorization engine.
+
+    ``category`` is the top-level folder (e.g. "Documents", "University") and
+    stays a flat string so the existing grouping/icon/dropdown logic never
+    has to know about nesting. ``subpath`` holds any additional folder
+    levels below it (e.g. ("Machine Learning", "Assignments")) and is empty
+    for plain rule-based results. ``confidence``/``source`` record where a
+    classification came from, for optional display in the UI.
+    """
 
     scanned: ScannedFile
     category: str
+    subpath: tuple[str, ...] = ()
+    confidence: float | None = None
+    source: str = "rule"
 
     @property
     def name(self) -> str:
@@ -41,6 +52,10 @@ class ClassifiedFile:
     def size(self) -> int:
         return self.scanned.size
 
+    @property
+    def category_path(self) -> tuple[str, ...]:
+        return (self.category, *self.subpath)
+
 
 @dataclass
 class PlannedMove:
@@ -50,6 +65,9 @@ class PlannedMove:
     source: Path
     destination: Path
     category: str
+    subpath: tuple[str, ...] = ()
+    confidence: float | None = None
+    source_kind: str = "rule"
     selected: bool = True
 
     @property
@@ -59,6 +77,10 @@ class PlannedMove:
     @property
     def size(self) -> int:
         return self.classified.size
+
+    @property
+    def is_ai_suggested(self) -> bool:
+        return self.source_kind == "ai"
 
 
 @dataclass
@@ -107,7 +129,7 @@ class ApplyResult:
 
     @property
     def folders_created(self) -> int:
-        return len({m.category for m in self.moved})
+        return len({m.destination.parent for m in self.moved})
 
 
 def pluralize(count: int, singular: str, plural: str | None = None) -> str:

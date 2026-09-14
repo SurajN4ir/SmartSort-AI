@@ -66,6 +66,52 @@ def test_plan_resolves_collision_between_two_planned_moves(tmp_path):
     }
 
 
+def test_plan_builds_nested_destination_for_subpath(tmp_path):
+    classified = [make_classified("ML_Final.pdf", "University", tmp_path)]
+    classified[0].subpath = ("Machine Learning", "Assignments")
+    classified[0].source = "ai"
+    classified[0].confidence = 0.9
+
+    plan = OrganizationPlanner().generate_plan(tmp_path, classified)
+
+    move = plan.moves[0]
+    assert move.destination == tmp_path / "University" / "Machine Learning" / "Assignments" / "ML_Final.pdf"
+    assert move.subpath == ("Machine Learning", "Assignments")
+    assert move.confidence == 0.9
+    assert move.source_kind == "ai"
+    assert move.is_ai_suggested is True
+
+
+def test_plan_groups_by_top_level_category_only(tmp_path):
+    a = make_classified("a.pdf", "University", tmp_path)
+    a.subpath = ("Course A",)
+    b = make_classified("b.pdf", "University", tmp_path)
+    b.subpath = ("Course B",)
+
+    plan = OrganizationPlanner().generate_plan(tmp_path, [a, b])
+
+    assert plan.total_categories == 1
+    assert len(plan.categories["University"]) == 2
+
+
+def test_retarget_collapses_to_flat_category(tmp_path):
+    classified = [make_classified("ML_Final.pdf", "University", tmp_path)]
+    classified[0].subpath = ("Machine Learning",)
+    classified[0].source = "ai"
+    classified[0].confidence = 0.8
+
+    plan = OrganizationPlanner().generate_plan(tmp_path, classified)
+    move = plan.moves[0]
+
+    OrganizationPlanner().retarget(plan, move, "Documents")
+
+    assert move.category == "Documents"
+    assert move.subpath == ()
+    assert move.source_kind == "manual"
+    assert move.confidence is None
+    assert move.destination == tmp_path / "Documents" / "ML_Final.pdf"
+
+
 def test_selected_moves_excludes_deselected():
     from smartsort.models import OrganizePlan, PlannedMove
 

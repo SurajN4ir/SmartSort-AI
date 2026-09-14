@@ -3,6 +3,7 @@ from pathlib import Path
 
 from smartsort.categorizer import Categorizer
 from smartsort.models import ScannedFile
+from smartsort.semantic import SemanticGuess
 
 
 def make_scanned(name: str) -> ScannedFile:
@@ -55,3 +56,40 @@ def test_custom_rules_override_defaults():
     categorizer = Categorizer(rules={".pdf": "CustomCategory"})
     assert categorizer.categorize_extension(".pdf") == "CustomCategory"
     assert categorizer.categorize_extension(".jpg") == "Others"
+
+
+def test_classify_with_guesses_prefers_semantic_guess():
+    categorizer = Categorizer()
+    scanned = make_scanned("ML_Assignment_Final.pdf")
+    guesses = {"ML_Assignment_Final.pdf": SemanticGuess(path=("University", "Machine Learning"), confidence=0.9)}
+
+    [result] = categorizer.classify_with_guesses([scanned], guesses)
+
+    assert result.category == "University"
+    assert result.subpath == ("Machine Learning",)
+    assert result.confidence == 0.9
+    assert result.source == "ai"
+    assert result.category_path == ("University", "Machine Learning")
+
+
+def test_classify_with_guesses_falls_back_to_rules_when_no_guess():
+    categorizer = Categorizer()
+    scanned = make_scanned("resume.pdf")
+
+    [result] = categorizer.classify_with_guesses([scanned], {})
+
+    assert result.category == "Documents"
+    assert result.subpath == ()
+    assert result.source == "rule"
+
+
+def test_classify_with_guesses_mixes_ai_and_rule_results():
+    categorizer = Categorizer()
+    files = [make_scanned("ML_Assignment_Final.pdf"), make_scanned("photo.jpg")]
+    guesses = {"ML_Assignment_Final.pdf": SemanticGuess(path=("University",), confidence=0.7)}
+
+    results = categorizer.classify_with_guesses(files, guesses)
+
+    assert results[0].source == "ai"
+    assert results[1].source == "rule"
+    assert results[1].category == "Images"

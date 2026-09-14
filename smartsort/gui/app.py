@@ -52,6 +52,8 @@ class SmartSortApp(ctk.CTk):
         self.sidebar.set_active(name)
         if name == "history":
             self.views["history"].refresh()
+        if name == "overview":
+            self.views["overview"].refresh_select_screen()
 
     def on_close(self) -> None:
         self.database.close()

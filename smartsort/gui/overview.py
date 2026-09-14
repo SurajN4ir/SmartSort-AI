@@ -13,6 +13,7 @@ from tkinter import filedialog
 
 import customtkinter as ctk
 
+from smartsort import local_config
 from smartsort.categorizer import Categorizer
 from smartsort.config import CATEGORY_ICONS
 from smartsort.database import Database
@@ -29,6 +30,7 @@ from smartsort.models import OrganizePlan, PlannedMove, format_size, pluralize
 from smartsort.organizer import FileOrganizer
 from smartsort.planner import OrganizationPlanner
 from smartsort.scanner import FileScanner
+from smartsort.semantic import SemanticClassifier, SemanticUnavailable
 
 MAX_ANIMATED_MOVES = 60
 
@@ -47,6 +49,8 @@ class OverviewView(ctk.CTkFrame):
         self.review_filter: str | None = None
         self.row_vars: dict[int, ctk.BooleanVar] = {}
         self._scheduled: list[str] = []
+        self.smart_mode = ctk.BooleanVar(value=False)
+        self.smart_notice: str | None = None
 
         self.container = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self.container.pack(fill="both", expand=True, padx=36, pady=28)
@@ -79,6 +83,16 @@ class OverviewView(ctk.CTkFrame):
         self.row_vars = {}
         self.show_select()
 
+    def refresh_select_screen(self) -> None:
+        """Re-render the select screen so it picks up a newly added API key.
+
+        Only does anything if the user is still on that screen -- never
+        interrupts an in-progress scan/review/apply flow.
+        """
+
+        if self.selected_folder is None and self.plan is None:
+            self.show_select()
+
     # -- step 1: select -----------------------------------------------------
 
     def show_select(self) -> None:
@@ -90,7 +104,7 @@ class OverviewView(ctk.CTkFrame):
         card = Card(wrapper, width=460, corner_radius=18)
         card.pack()
         card.grid_propagate(False)
-        card.configure(width=460, height=300)
+        card.configure(width=460, height=360)
 
         ctk.CTkLabel(card, text="◈", font=theme.font(34)).pack(pady=(40, 6))
         ctk.CTkLabel(
@@ -106,12 +120,34 @@ class OverviewView(ctk.CTkFrame):
 
         PrimaryButton(card, text="Choose Folder", width=200, command=self.choose_folder).pack()
 
+        key_available = local_config.has_api_key()
+        toggle = ctk.CTkCheckBox(
+            card,
+            text="✦ Smart Organize (AI)",
+            variable=self.smart_mode,
+            state="normal" if key_available else "disabled",
+            font=theme.font(12, "bold"),
+            checkbox_width=18,
+            checkbox_height=18,
+        )
+        toggle.pack(pady=(22, 2))
+        if not key_available:
+            self.smart_mode.set(False)
+        hint_text = (
+            "Groups files by meaning, not just file type (uses your Anthropic API key)."
+            if key_available
+            else "Add an Anthropic API key in Settings to enable meaning-based grouping."
+        )
+        ctk.CTkLabel(
+            card, text=hint_text, font=theme.font(10), text_color=theme.TEXT_MUTED, wraplength=380
+        ).pack()
+
         ctk.CTkLabel(
             card,
             text="Your files stay yours. Nothing moves without your approval.",
             font=theme.font(11),
             text_color=theme.TEXT_MUTED,
-        ).pack(pady=(24, 0))
+        ).pack(pady=(16, 0))
 
     def choose_folder(self) -> None:
         folder = filedialog.askdirectory(title="Choose a folder to organize")
@@ -147,7 +183,10 @@ class OverviewView(ctk.CTkFrame):
         steps_frame = ctk.CTkFrame(card, fg_color="transparent")
         steps_frame.pack(padx=30, fill="x")
 
-        step_labels = ["Scanning files", "Detecting file types", "Grouping into categories", "Preparing proposal"]
+        if self.smart_mode.get():
+            step_labels = ["Scanning files", "Detecting file types", "Asking AI for smarter categories"]
+        else:
+            step_labels = ["Scanning files", "Detecting file types", "Grouping into categories"]
         steps = [ProgressStep(steps_frame, text) for text in step_labels]
         for step in steps:
             step.pack(fill="x", pady=3)
@@ -157,7 +196,9 @@ class OverviewView(ctk.CTkFrame):
     def _animate_scan(self, progress: ctk.CTkProgressBar, steps: list[ProgressStep], index: int) -> None:
         if index > 0:
             steps[index - 1].set_done()
-        if index >= len(steps):
+        if index >= len(steps) - 1:
+            steps[-1].set_active()
+            progress.set(0.9)
             self._schedule(150, self.run_scan)
             return
 
@@ -172,7 +213,12 @@ class OverviewView(ctk.CTkFrame):
             self.show_select_error(str(exc))
             return
 
-        classified = self.categorizer.classify_all(scanned)
+        self.smart_notice = None
+        if self.smart_mode.get() and scanned:
+            classified = self._classify_with_ai(scanned)
+        else:
+            classified = self.categorizer.classify_all(scanned)
+
         self.plan = self.planner.generate_plan(self.selected_folder, classified)
         self.row_vars = {id(m): ctk.BooleanVar(value=True) for m in self.plan.moves}
 
@@ -180,6 +226,17 @@ class OverviewView(ctk.CTkFrame):
             self.show_empty_result()
         else:
             self.show_proposal()
+
+    def _classify_with_ai(self, scanned) -> list:
+        try:
+            classifier = SemanticClassifier(api_key=local_config.get_api_key())
+            guesses = classifier.classify_batch([f.name for f in scanned])
+            return self.categorizer.classify_with_guesses(scanned, guesses)
+        except SemanticUnavailable as exc:
+            self.smart_notice = str(exc)
+        except Exception:
+            self.smart_notice = "Smart Organize hit an unexpected error -- used standard rules instead."
+        return self.categorizer.classify_all(scanned)
 
     def show_select_error(self, message: str) -> None:
         self.clear()
@@ -217,6 +274,24 @@ class OverviewView(ctk.CTkFrame):
             font=theme.font(13),
             text_color=theme.TEXT_SECONDARY,
         ).pack(anchor="w", pady=(4, 0))
+
+        ai_count = sum(1 for m in plan.moves if m.is_ai_suggested)
+        if ai_count:
+            ctk.CTkLabel(
+                header,
+                text=f"✦ Smart Organize grouped {pluralize(ai_count, 'file')} by meaning, not just type.",
+                font=theme.font(11, "bold"),
+                text_color=theme.ACCENT,
+            ).pack(anchor="w", pady=(6, 0))
+        if self.smart_notice:
+            ctk.CTkLabel(
+                header,
+                text=f"⚠ {self.smart_notice}",
+                font=theme.font(11),
+                text_color=theme.WARNING,
+                wraplength=700,
+                justify="left",
+            ).pack(anchor="w", pady=(6, 0))
 
         stats_row = ctk.CTkFrame(self.container, fg_color="transparent")
         stats_row.pack(fill="x", pady=(0, 20))
@@ -335,10 +410,14 @@ class OverviewView(ctk.CTkFrame):
         )
         path_label.grid(row=0, column=1, sticky="w")
 
+        badge_label = ctk.CTkLabel(row, text="", font=theme.font(10, "bold"), text_color=theme.ACCENT)
+        badge_label.grid(row=0, column=2, padx=(8, 4))
+        self._set_confidence_badge(badge_label, move)
+
         size_label = ctk.CTkLabel(
             row, text=format_size(move.size), font=theme.font(11), text_color=theme.TEXT_MUTED
         )
-        size_label.grid(row=0, column=2, padx=(8, 10))
+        size_label.grid(row=0, column=3, padx=(8, 10))
 
         categories = sorted({m.category for m in self.plan.moves} | {move.category})
         category_menu = ctk.CTkOptionMenu(
@@ -350,22 +429,36 @@ class OverviewView(ctk.CTkFrame):
             button_color=theme.ACCENT,
             button_hover_color=theme.ACCENT_HOVER,
             font=theme.font(11),
-            command=lambda new_value, m=move, lbl=path_label: self._change_category(m, new_value, lbl),
+            command=lambda new_value, m=move, lbl=path_label, badge=badge_label: self._change_category(m, new_value, lbl, badge),
         )
         category_menu.set(move.category)
-        category_menu.grid(row=0, column=3)
+        category_menu.grid(row=0, column=4)
 
-    def _change_category(self, move: PlannedMove, new_category: str, path_label: ctk.CTkLabel) -> None:
+    def _set_confidence_badge(self, badge_label: ctk.CTkLabel, move: PlannedMove) -> None:
+        if move.is_ai_suggested and move.confidence is not None:
+            badge_label.configure(text=f"✦ {round(move.confidence * 100)}%")
+        else:
+            badge_label.configure(text="")
+
+    def _change_category(
+        self, move: PlannedMove, new_category: str, path_label: ctk.CTkLabel, badge_label: ctk.CTkLabel
+    ) -> None:
         self.planner.retarget(self.plan, move, new_category)
+        self._set_confidence_badge(badge_label, move)
         rel_source = self._relative(move.source)
         rel_dest = self._relative(move.destination)
         path_label.configure(text=f"{rel_source}   →   {rel_dest}")
 
-    def _relative(self, path: Path) -> str:
+    def _relative(self, path: Path, max_len: int = 42) -> str:
         try:
-            return str(path.relative_to(self.selected_folder.parent))
+            text = str(path.relative_to(self.selected_folder.parent))
         except ValueError:
-            return str(path)
+            text = str(path)
+        if len(text) <= max_len:
+            return text
+        # Truncate from the front so the filename (the most useful part for
+        # picking a row out of the list) always stays visible.
+        return "…" + text[-(max_len - 1):]
 
     # -- step 5: applying -----------------------------------------------------
 

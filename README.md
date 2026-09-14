@@ -39,10 +39,12 @@ running SmartSort on a folder full of files should never be a leap of faith.
 ```
 smartsort/
 ├── scanner.py       # walks a directory, collects file metadata
-├── categorizer.py   # extension -> category rules
+├── categorizer.py   # extension -> category rules, plus AI-guess merging
+├── semantic.py       # optional LLM-based classifier (Smart Organize)
 ├── planner.py       # turns classified files into a move plan
 ├── organizer.py     # executes a plan on disk, and undoes it later
 ├── database.py      # SQLite-backed scan/session history
+├── local_config.py  # local-only settings (e.g. the API key)
 ├── models.py         # shared data structures
 └── gui/              # CustomTkinter desktop UI
     ├── app.py
@@ -55,6 +57,29 @@ tests/                 # pytest suite for the core pipeline
 
 The core pipeline (scanner, categorizer, planner, organizer, database) has no
 GUI dependency and is fully unit tested. The GUI is a thin layer on top of it.
+
+## Smart Organize (optional AI layer)
+
+By default SmartSort classifies purely by file extension -- fast, free, and
+fully offline. Turning on **Smart Organize** in the app adds an opt-in second
+pass that asks an LLM (via the Anthropic API) to group files by what they
+*mean* rather than just their type:
+
+```
+ML_Assignment_Final.pdf          ->  University/Machine Learning/Assignments
+RealMadrid_vs_Barcelona_2026.mp4 ->  Football/Real Madrid/Matches
+```
+
+It's entirely additive: it needs your own Anthropic API key (set once in
+Settings, stored locally on your machine, never in this repo), only runs
+when you tick the checkbox, and any file it can't confidently place just
+keeps its normal rule-based category. Every suggestion still goes through
+the same review screen -- with a confidence score next to each AI-placed
+file -- before anything moves.
+
+```bash
+pip install -r requirements-ai.txt
+```
 
 ## Running it
 
