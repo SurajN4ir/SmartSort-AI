@@ -38,12 +38,27 @@ class DuplicatesView(ctk.CTkFrame):
         self.group_keep_vars: dict[int, ctk.StringVar] = {}
         self._scheduled: list[str] = []
 
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
         self.container = ctk.CTkScrollableFrame(self, fg_color="transparent")
-        self.container.pack(fill="both", expand=True, padx=36, pady=28)
+        self.center_host = ctk.CTkFrame(self, fg_color="transparent")
+        self.center_host.grid_rowconfigure(0, weight=1)
+        self.center_host.grid_columnconfigure(0, weight=1)
 
         self.show_select()
 
     # -- helpers ----------------------------------------------------------
+
+    def _use_scrollable(self) -> ctk.CTkScrollableFrame:
+        self.center_host.grid_forget()
+        self.container.grid(row=0, column=0, sticky="nsew", padx=36, pady=28)
+        return self.container
+
+    def _use_centered(self) -> ctk.CTkFrame:
+        self.container.grid_forget()
+        self.center_host.grid(row=0, column=0, sticky="nsew")
+        return self.center_host
 
     def _schedule(self, delay_ms: int, callback) -> None:
         after_id = self.after(delay_ms, callback)
@@ -61,6 +76,8 @@ class DuplicatesView(ctk.CTkFrame):
         self._cancel_scheduled()
         for widget in self.container.winfo_children():
             widget.destroy()
+        for widget in self.center_host.winfo_children():
+            widget.destroy()
 
     def reset(self) -> None:
         self.selected_folder = None
@@ -73,11 +90,10 @@ class DuplicatesView(ctk.CTkFrame):
 
     def show_select(self) -> None:
         self.clear()
-        wrapper = ctk.CTkFrame(self.container, fg_color="transparent")
-        wrapper.pack(expand=True, pady=(60, 0))
+        host = self._use_centered()
 
-        card = Card(wrapper, width=460, corner_radius=18)
-        card.pack()
+        card = Card(host, width=460, corner_radius=18)
+        card.grid(row=0, column=0)
         card.grid_propagate(False)
         card.configure(width=460, height=310)
 
@@ -112,11 +128,10 @@ class DuplicatesView(ctk.CTkFrame):
 
     def show_scanning(self) -> None:
         self.clear()
-        wrapper = ctk.CTkFrame(self.container, fg_color="transparent")
-        wrapper.pack(expand=True, pady=(70, 0))
+        host = self._use_centered()
 
-        card = Card(wrapper, width=460)
-        card.pack()
+        card = Card(host, width=460)
+        card.grid(row=0, column=0)
         card.grid_propagate(False)
         card.configure(width=460, height=280)
 
@@ -172,16 +187,18 @@ class DuplicatesView(ctk.CTkFrame):
 
     def show_select_error(self, message: str) -> None:
         self.clear()
-        wrapper = ctk.CTkFrame(self.container, fg_color="transparent")
-        wrapper.pack(expand=True, pady=(90, 0))
+        host = self._use_centered()
+        wrapper = ctk.CTkFrame(host, fg_color="transparent")
+        wrapper.grid(row=0, column=0)
         ctk.CTkLabel(wrapper, text="Couldn't read that folder", font=theme.heading_font(16)).pack()
         ctk.CTkLabel(wrapper, text=message, font=theme.font(12), text_color=theme.TEXT_SECONDARY).pack(pady=(6, 20))
         SecondaryButton(wrapper, text="Try another folder", command=self.reset).pack()
 
     def show_empty_result(self) -> None:
         self.clear()
-        wrapper = ctk.CTkFrame(self.container, fg_color="transparent")
-        wrapper.pack(expand=True, pady=(90, 0))
+        host = self._use_centered()
+        wrapper = ctk.CTkFrame(host, fg_color="transparent")
+        wrapper.grid(row=0, column=0)
         ctk.CTkLabel(wrapper, text="✦ No duplicates found", font=theme.heading_font(18)).pack()
         ctk.CTkLabel(
             wrapper,
@@ -195,6 +212,7 @@ class DuplicatesView(ctk.CTkFrame):
 
     def show_results(self) -> None:
         self.clear()
+        self._use_scrollable()
 
         header = ctk.CTkFrame(self.container, fg_color="transparent")
         header.pack(fill="x", pady=(0, 18))
@@ -298,16 +316,14 @@ class DuplicatesView(ctk.CTkFrame):
 
     def show_applying(self) -> None:
         self.clear()
+        host = self._use_centered()
         included_groups = [g for i, g in enumerate(self.groups) if self.group_include_vars[i].get()]
         plan = build_cleanup_plan(self.selected_folder, included_groups)
         moves = plan.moves
 
-        wrapper = ctk.CTkFrame(self.container, fg_color="transparent")
-        wrapper.pack(expand=True, pady=(50, 0))
-
         if not moves:
-            card = Card(wrapper, width=440)
-            card.pack()
+            card = Card(host, width=440)
+            card.grid(row=0, column=0)
             ctk.CTkLabel(card, text="Nothing selected", font=theme.heading_font(16)).pack(pady=(30, 6))
             ctk.CTkLabel(
                 card,
@@ -318,8 +334,8 @@ class DuplicatesView(ctk.CTkFrame):
             SecondaryButton(card, text="Back", command=self.show_results).pack(pady=(0, 30))
             return
 
-        card = Card(wrapper, width=480)
-        card.pack()
+        card = Card(host, width=480)
+        card.grid(row=0, column=0)
         card.grid_propagate(False)
         card.configure(width=480, height=min(560, 140 + 30 * max(1, len(moves))))
 
@@ -362,11 +378,9 @@ class DuplicatesView(ctk.CTkFrame):
 
     def show_done(self, result) -> None:
         self.clear()
-        wrapper = ctk.CTkFrame(self.container, fg_color="transparent")
-        wrapper.pack(expand=True, pady=(60, 0))
-
-        card = Card(wrapper, width=460)
-        card.pack()
+        host = self._use_centered()
+        card = Card(host, width=460)
+        card.grid(row=0, column=0)
         card.grid_propagate(False)
         card.configure(width=460, height=340)
 

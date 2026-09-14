@@ -52,12 +52,31 @@ class OverviewView(ctk.CTkFrame):
         self.smart_mode = ctk.BooleanVar(value=False)
         self.smart_notice: str | None = None
 
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
         self.container = ctk.CTkScrollableFrame(self, fg_color="transparent")
-        self.container.pack(fill="both", expand=True, padx=36, pady=28)
+        self.center_host = ctk.CTkFrame(self, fg_color="transparent")
+        self.center_host.grid_rowconfigure(0, weight=1)
+        self.center_host.grid_columnconfigure(0, weight=1)
 
         self.show_select()
 
     # -- helpers ----------------------------------------------------------
+
+    def _use_scrollable(self) -> ctk.CTkScrollableFrame:
+        """Grids in the scrollable container -- for screens with lists that can overflow."""
+
+        self.center_host.grid_forget()
+        self.container.grid(row=0, column=0, sticky="nsew", padx=36, pady=28)
+        return self.container
+
+    def _use_centered(self) -> ctk.CTkFrame:
+        """Grids in a plain frame that keeps a single card truly centered at any window size."""
+
+        self.container.grid_forget()
+        self.center_host.grid(row=0, column=0, sticky="nsew")
+        return self.center_host
 
     def _schedule(self, delay_ms: int, callback) -> None:
         after_id = self.after(delay_ms, callback)
@@ -74,6 +93,8 @@ class OverviewView(ctk.CTkFrame):
     def clear(self) -> None:
         self._cancel_scheduled()
         for widget in self.container.winfo_children():
+            widget.destroy()
+        for widget in self.center_host.winfo_children():
             widget.destroy()
 
     def reset(self) -> None:
@@ -97,12 +118,10 @@ class OverviewView(ctk.CTkFrame):
 
     def show_select(self) -> None:
         self.clear()
+        host = self._use_centered()
 
-        wrapper = ctk.CTkFrame(self.container, fg_color="transparent")
-        wrapper.pack(expand=True, pady=(60, 0))
-
-        card = Card(wrapper, width=460, corner_radius=18)
-        card.pack()
+        card = Card(host, width=460, corner_radius=18)
+        card.grid(row=0, column=0)
         card.grid_propagate(False)
         card.configure(width=460, height=360)
 
@@ -160,12 +179,10 @@ class OverviewView(ctk.CTkFrame):
 
     def show_scanning(self) -> None:
         self.clear()
+        host = self._use_centered()
 
-        wrapper = ctk.CTkFrame(self.container, fg_color="transparent")
-        wrapper.pack(expand=True, pady=(70, 0))
-
-        card = Card(wrapper, width=460)
-        card.pack()
+        card = Card(host, width=460)
+        card.grid(row=0, column=0)
         card.grid_propagate(False)
         card.configure(width=460, height=280)
 
@@ -259,16 +276,18 @@ class OverviewView(ctk.CTkFrame):
 
     def show_select_error(self, message: str) -> None:
         self.clear()
-        wrapper = ctk.CTkFrame(self.container, fg_color="transparent")
-        wrapper.pack(expand=True, pady=(90, 0))
+        host = self._use_centered()
+        wrapper = ctk.CTkFrame(host, fg_color="transparent")
+        wrapper.grid(row=0, column=0)
         ctk.CTkLabel(wrapper, text="Couldn't read that folder", font=theme.heading_font(16)).pack()
         ctk.CTkLabel(wrapper, text=message, font=theme.font(12), text_color=theme.TEXT_SECONDARY).pack(pady=(6, 20))
         SecondaryButton(wrapper, text="Try another folder", command=self.reset).pack()
 
     def show_empty_result(self) -> None:
         self.clear()
-        wrapper = ctk.CTkFrame(self.container, fg_color="transparent")
-        wrapper.pack(expand=True, pady=(90, 0))
+        host = self._use_centered()
+        wrapper = ctk.CTkFrame(host, fg_color="transparent")
+        wrapper.grid(row=0, column=0)
         ctk.CTkLabel(wrapper, text="✦ Already tidy", font=theme.heading_font(18)).pack()
         ctk.CTkLabel(
             wrapper,
@@ -282,6 +301,7 @@ class OverviewView(ctk.CTkFrame):
 
     def show_proposal(self) -> None:
         self.clear()
+        self._use_scrollable()
         plan = self.plan
 
         header = ctk.CTkFrame(self.container, fg_color="transparent")
@@ -343,6 +363,7 @@ class OverviewView(ctk.CTkFrame):
 
     def show_review(self, filter_category: str | None) -> None:
         self.clear()
+        self._use_scrollable()
         self.review_filter = filter_category
         plan = self.plan
 
@@ -483,13 +504,11 @@ class OverviewView(ctk.CTkFrame):
 
     def show_applying(self) -> None:
         self.clear()
+        host = self._use_centered()
         moves = self.plan.selected_moves
 
-        wrapper = ctk.CTkFrame(self.container, fg_color="transparent")
-        wrapper.pack(expand=True, pady=(50, 0))
-
-        card = Card(wrapper, width=480)
-        card.pack()
+        card = Card(host, width=480)
+        card.grid(row=0, column=0)
         card.grid_propagate(False)
         card.configure(width=480, height=min(560, 140 + 30 * max(1, len(moves))))
 
@@ -530,11 +549,9 @@ class OverviewView(ctk.CTkFrame):
 
     def show_done(self, result) -> None:
         self.clear()
-        wrapper = ctk.CTkFrame(self.container, fg_color="transparent")
-        wrapper.pack(expand=True, pady=(60, 0))
-
-        card = Card(wrapper, width=440)
-        card.pack()
+        host = self._use_centered()
+        card = Card(host, width=440)
+        card.grid(row=0, column=0)
         card.grid_propagate(False)
         card.configure(width=440, height=320)
 
