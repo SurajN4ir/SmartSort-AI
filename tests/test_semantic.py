@@ -5,10 +5,12 @@ import pytest
 from smartsort.semantic import (
     MAX_BATCH_SIZE,
     MAX_PATH_DEPTH,
+    PREVIEW_CHARS,
     SemanticClassifier,
     SemanticGuess,
     SemanticUnavailable,
     parse_response,
+    read_preview,
 )
 
 
@@ -109,7 +111,7 @@ def test_classify_batch_splits_into_chunks(monkeypatch):
     classifier = SemanticClassifier(api_key="fake-key")
     seen_chunks = []
 
-    def fake_chunk(filenames):
+    def fake_chunk(filenames, previews, existing_folders):
         seen_chunks.append(list(filenames))
         return {name: SemanticGuess(path=("X",), confidence=0.5) for name in filenames}
 
@@ -127,7 +129,7 @@ def test_classify_batch_splits_into_chunks(monkeypatch):
 def test_classify_batch_skips_failing_chunk_without_raising(monkeypatch):
     classifier = SemanticClassifier(api_key="fake-key")
 
-    def flaky_chunk(filenames):
+    def flaky_chunk(filenames, previews, existing_folders):
         if filenames[0] == "bad.txt":
             raise RuntimeError("network hiccup")
         return {name: SemanticGuess(path=("X",), confidence=0.5) for name in filenames}
@@ -139,3 +141,61 @@ def test_classify_batch_skips_failing_chunk_without_raising(monkeypatch):
     # Both filenames were requested as one chunk here, so a single failure
     # means neither gets a guess -- callers fall back to rule-based for both.
     assert results == {}
+
+
+def test_build_payload_includes_previews_and_existing_folders():
+    classifier = SemanticClassifier(api_key="fake-key")
+
+    payload = classifier._build_payload(
+        ["a.txt", "b.jpg"],
+        previews={"a.txt": "meeting notes for project x"},
+        existing_folders=["University", "Football"],
+    )
+
+    assert payload["files"] == [
+        {"name": "a.txt", "preview": "meeting notes for project x"},
+        {"name": "b.jpg"},
+    ]
+    assert payload["existing_folders"] == ["University", "Football"]
+
+
+def test_build_payload_omits_optional_keys_when_absent():
+    classifier = SemanticClassifier(api_key="fake-key")
+
+    payload = classifier._build_payload(["a.txt"], previews=None, existing_folders=None)
+
+    assert payload == {"files": [{"name": "a.txt"}]}
+
+
+def test_read_preview_returns_text_for_supported_extension(tmp_path):
+    file_path = tmp_path / "notes.txt"
+    file_path.write_text("Meeting notes for the ML project.")
+
+    assert read_preview(file_path) == "Meeting notes for the ML project."
+
+
+def test_read_preview_returns_none_for_unsupported_extension(tmp_path):
+    file_path = tmp_path / "photo.jpg"
+    file_path.write_bytes(b"\x00\x01\x02")
+
+    assert read_preview(file_path) is None
+
+
+def test_read_preview_returns_none_for_empty_file(tmp_path):
+    file_path = tmp_path / "empty.txt"
+    file_path.write_text("   ")
+
+    assert read_preview(file_path) is None
+
+
+def test_read_preview_truncates_long_content(tmp_path):
+    file_path = tmp_path / "big.txt"
+    file_path.write_text("x" * (PREVIEW_CHARS * 3))
+
+    preview = read_preview(file_path)
+
+    assert len(preview) == PREVIEW_CHARS
+
+
+def test_read_preview_returns_none_for_missing_file(tmp_path):
+    assert read_preview(tmp_path / "does_not_exist.txt") is None

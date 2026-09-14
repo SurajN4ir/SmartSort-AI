@@ -30,7 +30,7 @@ from smartsort.models import OrganizePlan, PlannedMove, format_size, pluralize
 from smartsort.organizer import FileOrganizer
 from smartsort.planner import OrganizationPlanner
 from smartsort.scanner import FileScanner
-from smartsort.semantic import SemanticClassifier, SemanticUnavailable
+from smartsort.semantic import SemanticClassifier, SemanticUnavailable, read_preview
 
 MAX_ANIMATED_MOVES = 60
 
@@ -230,13 +230,32 @@ class OverviewView(ctk.CTkFrame):
     def _classify_with_ai(self, scanned) -> list:
         try:
             classifier = SemanticClassifier(api_key=local_config.get_api_key())
-            guesses = classifier.classify_batch([f.name for f in scanned])
+            previews = {f.name: read_preview(f.path) for f in scanned}
+            previews = {name: text for name, text in previews.items() if text}
+            guesses = classifier.classify_batch(
+                [f.name for f in scanned],
+                previews=previews,
+                existing_folders=self._existing_subfolders(),
+            )
             return self.categorizer.classify_with_guesses(scanned, guesses)
         except SemanticUnavailable as exc:
             self.smart_notice = str(exc)
         except Exception:
             self.smart_notice = "Smart Organize hit an unexpected error -- used standard rules instead."
         return self.categorizer.classify_all(scanned)
+
+    def _existing_subfolders(self) -> list[str]:
+        """Folder names already present at the target location.
+
+        Passed to the semantic classifier as a hint so repeated runs reuse
+        e.g. "University" instead of drifting into near-duplicate names
+        like "Uni" or "College" across separate scans.
+        """
+
+        try:
+            return sorted(p.name for p in self.selected_folder.iterdir() if p.is_dir())
+        except OSError:
+            return []
 
     def show_select_error(self, message: str) -> None:
         self.clear()

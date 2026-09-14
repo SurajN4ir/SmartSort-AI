@@ -18,30 +18,69 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 MAX_BATCH_SIZE = 40
 MAX_PATH_DEPTH = 4
+PREVIEW_CHARS = 400
+
+# Extensions cheap and safe to read as plain text for a content preview.
+# Deliberately excludes binary document formats (pdf/docx/...) -- reading
+# those needs a real parser, which is a bigger dependency than this V1/V2
+# pipeline otherwise carries. Filename + a text preview is still a solid
+# signal for the very common case of notes, READMEs, code, and data files.
+TEXT_PREVIEW_EXTENSIONS = {
+    ".txt", ".md", ".csv", ".json", ".py", ".js", ".ts", ".tsx", ".jsx",
+    ".html", ".css", ".yml", ".yaml", ".ini", ".cfg", ".log", ".sql", ".sh",
+}
 
 SYSTEM_PROMPT = f"""You help a desktop app organize files into folders.
 
-Given a JSON array of filenames, propose a short folder path for each one \
-that groups related files together meaningfully -- by topic, project, \
-subject, or context implied by the name -- rather than just by file type. \
-Look for patterns across the batch (similar prefixes, shared project or \
-course names, dates, people, teams) and keep related files under a \
-consistent path.
+You will receive a JSON object describing a batch of files to organize:
+- "files": a list of {{"name": <filename>, "preview": <optional short text \
+snippet from inside the file>}}. Use the preview when present -- it is \
+often a much stronger signal than the filename alone.
+- "existing_folders" (optional): folder names this location already has \
+from previous organizing. Reuse one of these instead of inventing a \
+near-duplicate (e.g. don't create "University " or "College" if \
+"University" is already listed) whenever it genuinely fits.
+
+For each file, propose a short folder path that groups related files \
+together meaningfully -- by topic, project, subject, or context implied by \
+the name and preview -- rather than just by file type. Look for patterns \
+across the batch (similar prefixes, shared project or course names, dates, \
+people, teams) and keep related files under a consistent path.
 
 Rules:
 - Each path is a list of 1 to {MAX_PATH_DEPTH} folder names, ordered broad \
 to specific (e.g. ["University", "Machine Learning", "Assignments"]).
-- If a filename gives no useful signal beyond its file type, fall back to \
-one simple, generic folder such as "Documents", "Images", or "Videos".
+- If a file gives no useful signal beyond its type, fall back to one \
+simple, generic folder such as "Documents", "Images", or "Videos".
 - confidence is your own estimate from 0.0 to 1.0 of how meaningful (not \
 just type-based) the suggested path is.
 - Reply with ONLY a JSON array, no prose, no markdown fences, in exactly \
 this shape:
 [{{"file": "<original filename>", "path": ["<folder>", "..."], "confidence": <0-1>}}]"""
+
+
+def read_preview(path: Path, max_chars: int = PREVIEW_CHARS) -> str | None:
+    """A short text snippet from inside a file, or None if not applicable.
+
+    Only reads formats that are safe to decode as plain text -- anything
+    else (images, binaries, PDFs, archives) is skipped entirely rather than
+    risk reading garbage or a slow/large parse.
+    """
+
+    if path.suffix.lower() not in TEXT_PREVIEW_EXTENSIONS:
+        return None
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+            text = handle.read(max_chars)
+    except OSError:
+        return None
+    text = text.strip()
+    return text or None
 
 
 @dataclass
@@ -83,8 +122,18 @@ class SemanticClassifier:
             self._client = anthropic.Anthropic(api_key=self.api_key)
         return self._client
 
-    def classify_batch(self, filenames: list[str]) -> dict[str, SemanticGuess]:
+    def classify_batch(
+        self,
+        filenames: list[str],
+        previews: dict[str, str] | None = None,
+        existing_folders: list[str] | None = None,
+    ) -> dict[str, SemanticGuess]:
         """Best-effort semantic guesses keyed by filename.
+
+        ``previews`` (filename -> short text snippet) and
+        ``existing_folders`` (folder names already present at the target
+        location) are both optional extra context -- omitting them still
+        works, just with a weaker signal than filenames alone.
 
         Filenames the model didn't return a usable guess for are simply
         absent from the result -- callers should fall back to the
@@ -95,7 +144,7 @@ class SemanticClassifier:
         for start in range(0, len(filenames), MAX_BATCH_SIZE):
             chunk = filenames[start : start + MAX_BATCH_SIZE]
             try:
-                results.update(self._classify_chunk(chunk))
+                results.update(self._classify_chunk(chunk, previews, existing_folders))
             except SemanticUnavailable:
                 raise
             except Exception:
@@ -105,12 +154,37 @@ class SemanticClassifier:
                 continue
         return results
 
-    def _classify_chunk(self, filenames: list[str]) -> dict[str, SemanticGuess]:
+    def _build_payload(
+        self,
+        filenames: list[str],
+        previews: dict[str, str] | None,
+        existing_folders: list[str] | None,
+    ) -> dict:
+        files_payload = []
+        for name in filenames:
+            entry = {"name": name}
+            preview = previews.get(name) if previews else None
+            if preview:
+                entry["preview"] = preview
+            files_payload.append(entry)
+
+        payload: dict = {"files": files_payload}
+        if existing_folders:
+            payload["existing_folders"] = list(existing_folders)
+        return payload
+
+    def _classify_chunk(
+        self,
+        filenames: list[str],
+        previews: dict[str, str] | None,
+        existing_folders: list[str] | None,
+    ) -> dict[str, SemanticGuess]:
+        payload = self._build_payload(filenames, previews, existing_folders)
         message = self.client.messages.create(
             model=self.model,
             max_tokens=4096,
             system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": json.dumps(filenames)}],
+            messages=[{"role": "user", "content": json.dumps(payload)}],
         )
         text = "".join(block.text for block in message.content if hasattr(block, "text"))
         return parse_response(text, filenames)

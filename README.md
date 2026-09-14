@@ -77,6 +77,15 @@ keeps its normal rule-based category. Every suggestion still goes through
 the same review screen -- with a confidence score next to each AI-placed
 file -- before anything moves.
 
+Two extra signals feed into the same pass, both automatic once it's on:
+- **Content previews**: for plain-text files (`.txt`, `.md`, `.py`, `.json`,
+  ...) a short snippet from inside the file is sent along with the
+  filename -- often a much stronger signal than the name alone.
+- **Existing folder structure**: if the target folder already has
+  subfolders from an earlier organize, their names are passed as a hint so
+  repeated runs reuse "University" instead of drifting into "Uni" or
+  "College" over time.
+
 ```bash
 pip install -r requirements-ai.txt
 ```
